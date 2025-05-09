@@ -1,0 +1,100 @@
+
+
+# Connect to an API
+import requests
+import pyodbc
+from datetime import datetime
+import pandas as pd
+import sys
+import os
+# Xác định đường dẫn thư mục gốc
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from CrawlDuLieuThiTruong.connectDB import conn_market
+sys.stdout.reconfigure(encoding="utf-8")
+
+
+def convert_date_format(date_str):
+    # Chuyển đổi chuỗi thành đối tượng datetime
+    date_obj = datetime.strptime(date_str, "%d/%m/%Y")
+    
+    # Định dạng lại thành chuỗi YYYYMMDD
+    formatted_date = date_obj.strftime("%Y%m%d")
+    
+    return formatted_date
+
+
+def main():
+    today = datetime.today()
+    year = today.year
+    month = today.month
+    day = today.day
+    date_string = f"{year:04d}-{month:02d}-{day:02d}"
+
+
+    headers = {
+        "Cookie": "_cc_id=8fdb46b40dad2f6f5d7b50be78231148; dable_uid=45655677.1660624861393; dable_uid=45655677.1660624861393; _ga_400SVTKXBC=GS1.1.1686541849.5.1.1686541850.59.0.0; language=vi-VN; _pbjs_userid_consent_data=3524755945110770; ASP.NET_SessionId=ifu3ojy0ssdvvttifbpfggrg; __RequestVerificationToken=ZVASYg19R4_TSS5wk07MZ3Xe3C_sr1B2HuWLlAu7iZg37CYdLRxFAcoe8RyZHU9FojE2fFWyvBcJPZEhB6ZwF5Nc4xeHhkBX6T69ttl2fbQ1; Theme=Light; AnonymousNotification=; panoramaId_expiry=1697786987537; panoramaId=cb747a28666e1e742fbd41c00a5716d539388f91aed2fd8b71ff526f27e2b89f; panoramaIdType=panoIndiv; _ga=GA1.1.510009329.1685672045; __gads=ID=578b8e092ee7c371-220f3a85ace1009a:T=1685672044:RT=1697182187:S=ALNI_MYR_hfaGRvuWJZq9SkGpFTDHV5EQw; __gpi=UID=00000c0e76a642d1:T=1685672044:RT=1697182187:S=ALNI_MZcRCy1HAb7LEfFt0usJV2-93zewA; _ga_EXMM0DKVEX=GS1.1.1697182185.126.1.1697182301.60.0.0;",
+        "User-Agent": "Mozilla/5.0"
+    }
+
+
+    payload = {
+        'type': 1,
+        'fromYear': year,
+        'toYear': year,
+        'from': date_string,
+        'to': date_string,
+        'normTypeID': 53,
+        "__RequestVerificationToken": "qMYMEp83gMR3R6s0Gc0rdLUqnjbL-jxMDmqD-VAqU4rRIDoRlPZ7_Ol1thzx8H5s4USOO4nR2D_jDAkTb6hCcbWiZCpGu5VQ9jlunLygXgk1"
+    }
+    response = requests.post(url="https://finance.vietstock.vn/data/reportdatatopbynormtype", data=payload, headers=headers)
+
+    data=response.json()
+    # print(data)
+
+
+
+   # #--------------------Insert dữ liệu vào trong CSDL-------------------------------------------------
+
+    conn=conn_market
+    cursor = conn.cursor()
+
+
+    ## Insert dữ liệu Bảng kết quả hoạt động kinh doanh
+    Total_table= 'Fact.[Tỉ giá hối đoái]'
+
+    for record in data["data"]:
+        ReportTime=record["ReportTime"]
+        Type=record["NormName"]
+        if record["NormValue"]!=None:
+            Value=record["NormValue"]
+        else: Value='NULL'
+
+
+        if ReportTime != '0':
+            Datekey=convert_date_format(ReportTime)
+            if Type =="Tỷ giá trung tâm (từ 04/01/2016)":
+                # print("Số tổng")
+                # print(Datekey)
+                # print(Type)
+                # print(Value)
+                delete_table = "DELETE FROM "+Total_table+ " WHERE [Date Key]="+str(Datekey) +" AND [VND/USD] IS NOT NULL"
+                insert_table="INSERT INTO "+Total_table+"( [Date Key], [VND/USD]) VALUES ("+str(Datekey)+","+str(Value)+")"
+                print(delete_table)
+                print(insert_table)
+                cursor.execute(delete_table)
+                cursor.execute(insert_table)
+                cursor.commit()
+        else:
+            pass
+
+
+    ## Ngắt kết nối với CSDL
+    cursor.close()
+    conn.close()
+
+    # Thông báo lấy thành công
+    print("Lấy dữ liệu thành công!")
+
+if __name__ == "__main__":
+    main()
+
